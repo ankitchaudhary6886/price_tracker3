@@ -1,8 +1,7 @@
 import json
 import os
 import re
-import cloudscraper  # New library to bypass bot protection
-from bs4 import BeautifulSoup
+from playwright.sync_api import sync_playwright
 from datetime import datetime
 
 # --- Configuration ---
@@ -10,12 +9,10 @@ TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 PRODUCTS_FILE = 'products.json'
 
-# Initialize the scraper
-scraper = cloudscraper.create_scraper()
-
 # --- Helper Functions ---
 def send_telegram_message(message):
     """Sends a message to your Telegram chat."""
+    import requests
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {'chat_id': TELEGRAM_CHAT_ID, 'text': message, 'parse_mode': 'Markdown'}
     try:
@@ -24,50 +21,50 @@ def send_telegram_message(message):
         print(f"Error sending Telegram message: {e}")
 
 def get_price_from_url(url):
-    """Scrapes the price from a given product URL."""
-    # More realistic headers to look like a real browser
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'none',
-        'Sec-Fetch-User': '?1',
-        'Cache-Control': 'max-age=0',
-    }
-    
-    try:
-        response = scraper.get(url, headers=headers, timeout=20)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.content, 'html.parser')
-
-        # --- Amazon Price Selectors ---
-        if 'amazon' in url:
-            # Try multiple potential selectors
-            price_element = soup.select_one('.a-price-whole, #priceblock_ourprice, .a-offscreen, #priceblock_dealprice')
-            if price_element:
-                price_text = price_element.get_text().strip()
-                return float(re.sub(r'[^\d.]', '', price_text))
+    """Scrapes the price from a given product URL using Playwright."""
+    price = None
+    with sync_playwright() as p:
+        # Launch a headless Chromium browser
+        browser = p.chromium.launch(headless=True)
+        # Create a new context with a realistic user agent
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            viewport={'width': 1920, 'height': 1080}
+        )
+        page = context.new_page()
         
-        # --- Flipkart Price Selectors ---
-        elif 'flipkart' in url:
-            # Try multiple potential selectors
-            price_element = soup.select_one('._30jeq3._16Jk6d, ._1vC4OE, ._3qQ9m1, ._25b18c')
-            if price_element:
-                price_text = price_element.get_text().strip()
-                return float(re.sub(r'[^\d.]', '', price_text))
+        try:
+            # Go to the page and wait for the network to be idle
+            page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            page.wait_for_timeout(3000) # Wait 3 seconds for JS to load prices
 
-    except Exception as e:
-        print(f"Error fetching price for {url}: {e}")
-    return None
+            if 'amazon' in url:
+                # Amazon selectors
+                price_selectors = ['.a-price-whole', '#priceblock_ourprice', '.a-offscreen', '#priceblock_dealprice']
+                for selector in price_selectors:
+                    if page.locator(selector).count() > 0:
+                        price_text = page.locator(selector).first.inner_text()
+                        price = float(re.sub(r'[^\d.]', '', price_text))
+                        break
+            
+            elif 'flipkart' in url:
+                # Flipkart selectors
+                price_selectors = ['._30jeq3._16Jk6d', '._1vC4OE', '._3qQ9m1', '._25b18c']
+                for selector in price_selectors:
+                    if page.locator(selector).count() > 0:
+                        price_text = page.locator(selector).first.inner_text()
+                        price = float(re.sub(r'[^\d.]', '', price_text))
+                        break
+
+        except Exception as e:
+            print(f"Error fetching price for {url}: {e}")
+        finally:
+            browser.close()
+            
+    return price
 
 # --- Main Logic ---
 def main():
-    # Load product data
     with open(PRODUCTS_FILE, 'r') as f:
         products = json.load(f)
 
@@ -80,20 +77,17 @@ def main():
         
         if current_price is None:
             print(f"Could not fetch price for {product['name']}")
-            updated_products.append(product) # Keep original if fetch fails
+            updated_products.append(product)
             continue
 
-        # Prepare alert message components
         name = product['name']
         target = product.get('target_price')
         last = product.get('last_price')
 
-        # Update the product's last_price for the next run
         updated_product = product.copy()
         updated_product['last_price'] = current_price
         updated_products.append(updated_product)
 
-        # Check for changes and targets
         change_msg = ""
         if last is not None:
             change = current_price - last
@@ -112,7 +106,6 @@ def main():
             else:
                 target_msg = f"Distance to target (₹{target:.2f}): ₹{distance:.2f} away"
 
-        # Build the final message
         message = (
             f"*Price Update for {name}*\n"
             f"*Current Price:* ₹{current_price:.2f}\n"
@@ -122,11 +115,9 @@ def main():
         )
         alerts.append(message)
 
-    # Save the updated product list (with new last_price) back to the file
     with open(PRODUCTS_FILE, 'w') as f:
         json.dump(updated_products, f, indent=2)
 
-    # Send all alerts as a single message
     if alerts:
         final_message = "\n\n---\n\n".join(alerts)
         send_telegram_message(final_message)
