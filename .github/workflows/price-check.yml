@@ -39,3 +39,12 @@ jobs:
           git add products.json
           git diff --quiet && git diff --staged --quiet || git commit -m "Update prices [skip ci]"
           git push
+          
+      - name: Upload Debug Artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: debug-artifacts
+          path: |
+            *.png
+            *.html
