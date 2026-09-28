@@ -1,0 +1,39 @@
+name: Daily Price Check
+
+on:
+  schedule:
+    # Runs at 08:00 UTC (1:30 PM IST) every day
+    - cron: '0 8 * * *'
+  workflow_dispatch: # Allows you to run it manually from the Actions tab
+
+jobs:
+  check-prices:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Needed to commit the updated products.json file
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4
+
+      - name: Run price checker
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python price_checker.py
+
+      - name: Commit and push changes to products.json
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add products.json
+          git diff --quiet && git diff --staged --quiet || git commit -m "Update prices [skip ci]"
+          git push
