@@ -11,7 +11,6 @@ PRODUCTS_FILE = 'products.json'
 
 # --- Helper Functions ---
 def send_telegram_message(message):
-    """Sends a message to your Telegram chat."""
     import requests
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {'chat_id': TELEGRAM_CHAT_ID, 'text': message, 'parse_mode': 'Markdown'}
@@ -21,12 +20,9 @@ def send_telegram_message(message):
         print(f"Error sending Telegram message: {e}")
 
 def get_price_from_url(url):
-    """Scrapes the price from a given product URL using Playwright."""
     price = None
     with sync_playwright() as p:
-        # Launch a headless Chromium browser
         browser = p.chromium.launch(headless=True)
-        # Create a new context with a realistic user agent
         context = browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             viewport={'width': 1920, 'height': 1080}
@@ -34,12 +30,19 @@ def get_price_from_url(url):
         page = context.new_page()
         
         try:
-            # Go to the page and wait for the network to be idle
             page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            page.wait_for_timeout(3000) # Wait 3 seconds for JS to load prices
+            page.wait_for_timeout(3000) # Wait 3 seconds for JS to load
+
+            # --- DEBUGGING: Print Title and Save Screenshot ---
+            page_title = page.title()
+            print(f"Page Title: {page_title}")
+            safe_url_name = re.sub(r'[^a-zA-Z0-9]', '_', url.split('/')[-1])[:30]
+            page.screenshot(path=f"debug_{safe_url_name}.png")
+            with open(f"debug_{safe_url_name}.html", "w", encoding="utf-8") as f:
+                f.write(page.content())
+            # ---------------------------------------------------
 
             if 'amazon' in url:
-                # Amazon selectors
                 price_selectors = ['.a-price-whole', '#priceblock_ourprice', '.a-offscreen', '#priceblock_dealprice']
                 for selector in price_selectors:
                     if page.locator(selector).count() > 0:
@@ -48,7 +51,6 @@ def get_price_from_url(url):
                         break
             
             elif 'flipkart' in url:
-                # Flipkart selectors
                 price_selectors = ['._30jeq3._16Jk6d', '._1vC4OE', '._3qQ9m1', '._25b18c']
                 for selector in price_selectors:
                     if page.locator(selector).count() > 0:
@@ -79,7 +81,7 @@ def main():
             print(f"Could not fetch price for {product['name']}")
             updated_products.append(product)
             continue
-
+        # ... (rest of the main logic remains exactly the same)
         name = product['name']
         target = product.get('target_price')
         last = product.get('last_price')
