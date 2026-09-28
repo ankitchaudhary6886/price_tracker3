@@ -1,7 +1,7 @@
 import json
 import os
 import re
-import requests
+import cloudscraper  # New library to bypass bot protection
 from bs4 import BeautifulSoup
 from datetime import datetime
 
@@ -9,6 +9,9 @@ from datetime import datetime
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 PRODUCTS_FILE = 'products.json'
+
+# Initialize the scraper
+scraper = cloudscraper.create_scraper()
 
 # --- Helper Functions ---
 def send_telegram_message(message):
@@ -22,25 +25,38 @@ def send_telegram_message(message):
 
 def get_price_from_url(url):
     """Scrapes the price from a given product URL."""
+    # More realistic headers to look like a real browser
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Cache-Control': 'max-age=0',
     }
+    
     try:
-        response = requests.get(url, headers=headers, timeout=15)
+        response = scraper.get(url, headers=headers, timeout=20)
         response.raise_for_status()
         soup = BeautifulSoup(response.content, 'html.parser')
 
         # --- Amazon Price Selectors ---
         if 'amazon' in url:
-            price_element = soup.select_one('.a-price-whole, #priceblock_ourprice, .a-offscreen')
+            # Try multiple potential selectors
+            price_element = soup.select_one('.a-price-whole, #priceblock_ourprice, .a-offscreen, #priceblock_dealprice')
             if price_element:
                 price_text = price_element.get_text().strip()
-                # Clean the price string (remove commas, currency symbols)
                 return float(re.sub(r'[^\d.]', '', price_text))
         
         # --- Flipkart Price Selectors ---
         elif 'flipkart' in url:
-            price_element = soup.select_one('._30jeq3._16Jk6d, ._1vC4OE, ._3qQ9m1')
+            # Try multiple potential selectors
+            price_element = soup.select_one('._30jeq3._16Jk6d, ._1vC4OE, ._3qQ9m1, ._25b18c')
             if price_element:
                 price_text = price_element.get_text().strip()
                 return float(re.sub(r'[^\d.]', '', price_text))
