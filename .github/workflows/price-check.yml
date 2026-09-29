@@ -22,9 +22,7 @@ jobs:
           python-version: '3.9'
 
       - name: Install dependencies
-        run: |
-          pip install playwright requests beautifulsoup4
-          playwright install chromium
+        run: pip install requests beautifulsoup4
         
       - name: Run price checker
         env:
