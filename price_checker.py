@@ -24,7 +24,9 @@ def get_price_from_url(url):
     """Scrapes the price using ScraperAPI to bypass bot detection."""
     # ScraperAPI URL - Add special parameters for Flipkart
     if 'flipkart' in url:
-        api_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY}&url={url}&render=true&country_code=in"
+        # Switch to mobile URL and force premium proxies to bypass Flipkart's strict blocking
+        mobile_url = url.replace('www.flipkart.com', 'm.flipkart.com')
+        api_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY}&url={mobile_url}&render=true&country_code=in&premium=true&device_type=mobile"
     else:
         api_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY}&url={url}"
     
@@ -42,7 +44,7 @@ def get_price_from_url(url):
         
         # --- Flipkart Price Selectors ---
         elif 'flipkart' in url:
-            price_element = soup.select_one('._30jeq3._16Jk6d, ._1vC4OE, ._3qQ9m1, ._25b18c')
+            price_element = soup.select_one('._30jeq3._16Jk6d, ._1vC4OE, ._3qQ9m1, ._25b18c, ._30jeq3')
             if price_element:
                 price_text = price_element.get_text().strip()
                 return float(re.sub(r'[^\d.]', '', price_text))
