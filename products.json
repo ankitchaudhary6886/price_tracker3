@@ -3,12 +3,6 @@
     "name": "Sony WH-1000XM5",
     "url": "https://www.amazon.in/dp/B09XS7JWHH",
     "target_price": 25000,
-    "last_price": 29990.0
-  },
-  {
-    "name": "Apple iPhone 15",
-    "url": "https://www.flipkart.com/apple-iphone-15-blue-128-gb/p/itm6ac6485515ae4",
-    "target_price": 60000,
     "last_price": null
   }
 ]
