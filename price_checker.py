@@ -1,17 +1,18 @@
 import json
 import os
 import re
-from playwright.sync_api import sync_playwright
+import requests
+from bs4 import BeautifulSoup
 from datetime import datetime
 
 # --- Configuration ---
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
+SCRAPER_API_KEY = os.environ.get('SCRAPER_API_KEY')
 PRODUCTS_FILE = 'products.json'
 
 # --- Helper Functions ---
 def send_telegram_message(message):
-    import requests
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {'chat_id': TELEGRAM_CHAT_ID, 'text': message, 'parse_mode': 'Markdown'}
     try:
@@ -20,50 +21,32 @@ def send_telegram_message(message):
         print(f"Error sending Telegram message: {e}")
 
 def get_price_from_url(url):
-    price = None
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            viewport={'width': 1920, 'height': 1080}
-        )
-        page = context.new_page()
+    """Scrapes the price using ScraperAPI to bypass bot detection."""
+    # ScraperAPI URL
+    api_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY}&url={url}"
+    
+    try:
+        response = requests.get(api_url, timeout=60)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        # --- Amazon Price Selectors ---
+        if 'amazon' in url:
+            price_element = soup.select_one('.a-price-whole, #priceblock_ourprice, .a-offscreen, #priceblock_dealprice')
+            if price_element:
+                price_text = price_element.get_text().strip()
+                return float(re.sub(r'[^\d.]', '', price_text))
         
-        try:
-            page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            page.wait_for_timeout(3000) # Wait 3 seconds for JS to load
+        # --- Flipkart Price Selectors ---
+        elif 'flipkart' in url:
+            price_element = soup.select_one('._30jeq3._16Jk6d, ._1vC4OE, ._3qQ9m1, ._25b18c')
+            if price_element:
+                price_text = price_element.get_text().strip()
+                return float(re.sub(r'[^\d.]', '', price_text))
 
-            # --- DEBUGGING: Print Title and Save Screenshot ---
-            page_title = page.title()
-            print(f"Page Title: {page_title}")
-            safe_url_name = re.sub(r'[^a-zA-Z0-9]', '_', url.split('/')[-1])[:30]
-            page.screenshot(path=f"debug_{safe_url_name}.png")
-            with open(f"debug_{safe_url_name}.html", "w", encoding="utf-8") as f:
-                f.write(page.content())
-            # ---------------------------------------------------
-
-            if 'amazon' in url:
-                price_selectors = ['.a-price-whole', '#priceblock_ourprice', '.a-offscreen', '#priceblock_dealprice']
-                for selector in price_selectors:
-                    if page.locator(selector).count() > 0:
-                        price_text = page.locator(selector).first.inner_text()
-                        price = float(re.sub(r'[^\d.]', '', price_text))
-                        break
-            
-            elif 'flipkart' in url:
-                price_selectors = ['._30jeq3._16Jk6d', '._1vC4OE', '._3qQ9m1', '._25b18c']
-                for selector in price_selectors:
-                    if page.locator(selector).count() > 0:
-                        price_text = page.locator(selector).first.inner_text()
-                        price = float(re.sub(r'[^\d.]', '', price_text))
-                        break
-
-        except Exception as e:
-            print(f"Error fetching price for {url}: {e}")
-        finally:
-            browser.close()
-            
-    return price
+    except Exception as e:
+        print(f"Error fetching price for {url}: {e}")
+    return None
 
 # --- Main Logic ---
 def main():
@@ -81,7 +64,7 @@ def main():
             print(f"Could not fetch price for {product['name']}")
             updated_products.append(product)
             continue
-        # ... (rest of the main logic remains exactly the same)
+
         name = product['name']
         target = product.get('target_price')
         last = product.get('last_price')
