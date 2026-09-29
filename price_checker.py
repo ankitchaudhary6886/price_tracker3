@@ -23,7 +23,7 @@ def send_telegram_message(message):
 def get_price_from_url(url):
     """Scrapes the price using ScraperAPI to bypass bot detection."""
     # ScraperAPI URL
-    api_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY}&url={url}"
+    # Use special parameters for Flipkart to bypass their JS and IP blocks     if 'flipkart' in url:         api_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY}&url={url}&render=true&country_code=in"     else:         api_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY}&url={url}"
     
     try:
         response = requests.get(api_url, timeout=60)
